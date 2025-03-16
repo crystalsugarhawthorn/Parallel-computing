@@ -2,62 +2,95 @@
 #include <cstdlib>
 #include <Windows.h>
 #include <iomanip>
+#include <stdio.h>
 
-// ·½·¨1£ºÁĞÓÅÏÈ±éÀú£¨»º´æ²»ÓÑºÃ£©
+#ifdef __cplusplus
+#define RESTRICT __restrict
+#else
+#define RESTRICT restrict
+#endif
+
+// æ–¹æ³•1ï¼šåˆ—ä¼˜å…ˆéå†ï¼ˆç¼“å­˜ä¸å‹å¥½ï¼‰
 void method1(double** matrix, double* vector, double* result, int n) {
     for (int j = 0; j < n; j++) {
         double sum = 0.0;
         for (int i = 0; i < n; i++) {
-            sum += matrix[i][j] * vector[i]; // ÁĞÓÅÏÈ·ÃÎÊ
+            sum += matrix[i][j] * vector[i]; // åˆ—ä¼˜å…ˆè®¿é—®
         }
         result[j] = sum;
     }
 }
 
-// ·½·¨2£ºÏÔÊ½ÁĞÓÅÏÈÀÛ¼Ó
+// æ–¹æ³•2ï¼šæ˜¾å¼åˆ—ä¼˜å…ˆç´¯åŠ 
 void method2(double** b, double* a, double* sum, int n) {
     for (int i = 0; i < n; ++i) sum[i] = 0.0;
     for (int j = 0; j < n; ++j) {
         for (int i = 0; i < n; ++i) {
-            sum[i] += b[j][i] * a[j]; // ÁĞÓÅÏÈ·ÃÎÊ
+            sum[i] += b[j][i] * a[j]; // åˆ—ä¼˜å…ˆè®¿é—®
         }
     }
 }
 
-// ·½·¨3£ºÑ­»·Õ¹¿ª
+// æ–¹æ³•3ï¼šå¾ªç¯å±•å¼€
 void method3(double** b, double* a, double* sum, int n) {
     for (int i = 0; i < n; ++i) sum[i] = 0.0;
-    for (int j = 0; j < n; ++j) {
-    int i;
-    // Ö÷Ñ­»·£¬Ã¿´Î´¦Àí4¸öÔªËØ
-    for (i = 0; i <= n - 4; i += 4) {
-         sum[i]     += b[j][i]     * a[j];
-         sum[i + 1] += b[j][i + 1] * a[j];
-         sum[i + 2] += b[j][i + 2] * a[j];
-         sum[i + 3] += b[j][i + 3] * a[j];
-    }
-    // ´¦ÀíÊ£Óà²»×ã4¸öµÄÔªËØ
-    for (; i < n; ++i) {
-         sum[i] += b[j][i] * a[j];
+        for (int j = 0; j < n; ++j) {
+        int i;
+        // ä¸»å¾ªç¯ï¼Œæ¯æ¬¡å¤„ç†4ä¸ªå…ƒç´ 
+        for (i = 0; i <= n - 4; i += 4) {
+             sum[i]     += b[j][i]     * a[j];
+             sum[i + 1] += b[j][i + 1] * a[j];
+             sum[i + 2] += b[j][i + 2] * a[j];
+             sum[i + 3] += b[j][i + 3] * a[j];
+        }
+        // å¤„ç†å‰©ä½™ä¸è¶³4ä¸ªçš„å…ƒç´ 
+        for (; i < n; ++i) {
+             sum[i] += b[j][i] * a[j];
+        }
     }
 }
 
+void method4(double** b, double* a, double* sum, int n) {
+    for (int j = 0; j < n; ++j) {
+        // å°† a[j] è¯»å–åˆ°å±€éƒ¨å˜é‡ï¼Œå‡å°‘å†…å­˜è®¿é—®æ¬¡æ•°
+        double a_val = a[j];
+        // ä½¿ç”¨ restrict æç¤ºç¼–è¯‘å™¨æŒ‡é’ˆä¸ä¼šäº’ç›¸é‡å ï¼Œä¾¿äºä¼˜åŒ–
+        double * RESTRICT b_j = b[j];
+        int i = 0;
+        // ä¸»å¾ªç¯ï¼šæ¯æ¬¡å¤„ç†4ä¸ªå…ƒç´ ï¼Œå¹¶é€šè¿‡ pragma æŒ‡ä»¤é¼“åŠ± SIMD çŸ¢é‡åŒ–
+        #pragma omp simd
+        for (; i <= n - 4; i += 4) {
+            sum[i]     += b_j[i]     * a_val;
+            sum[i + 1] += b_j[i + 1] * a_val;
+            sum[i + 2] += b_j[i + 2] * a_val;
+            sum[i + 3] += b_j[i + 3] * a_val;
+        }
+        // å¤„ç†å‰©ä½™ä¸è¶³4ä¸ªçš„å…ƒç´ ï¼ŒåŒæ ·åŠ å…¥ SIMD æç¤º
+        #pragma omp simd
+        for (; i < n; ++i) {
+            sum[i] += b_j[i] * a_val;
+        }
+    }
 }
+
+
+
 
 int main() {
-    const int n = 20000;      // ¾ØÕóÎ¬¶È£¨²âÊÔ´ó³ß´ç×î»µÇé¿ö£©
-    const int trials = 1;   // ²âÊÔ´ÎÊı
+    const int n = 20000;      // çŸ©é˜µç»´åº¦ï¼ˆæµ‹è¯•å¤§å°ºå¯¸æœ€åæƒ…å†µï¼‰
+    const int trials = 5;   // æµ‹è¯•æ¬¡æ•°
 
-    // ¶¯Ì¬·ÖÅäÄÚ´æ£¨Ä£ÄâÁĞÓÅÏÈ´æ´¢£©
-    double** matrix = new double*[n]; // ·½·¨1µÄ¾ØÕó£¨ĞĞÓÅÏÈ´æ´¢£©
-    double** b = new double*[n];      // ·½·¨2µÄ¾ØÕó£¨ÁĞÓÅÏÈ´æ´¢£©
-    double* vector = new double[n];   // ÊäÈëÏòÁ¿
-    double* a = new double[n];        // ÊäÈëÏòÁ¿¸±±¾
-    double* result1 = new double[n];  // ·½·¨1½á¹û
-    double* result2 = new double[n];  // ·½·¨2½á¹û
-    double* result3 = new double[n];  // ·½·¨3½á¹û
+    // åŠ¨æ€åˆ†é…å†…å­˜ï¼ˆæ¨¡æ‹Ÿåˆ—ä¼˜å…ˆå­˜å‚¨ï¼‰
+    double** matrix = new double*[n]; // æ–¹æ³•1çš„çŸ©é˜µï¼ˆè¡Œä¼˜å…ˆå­˜å‚¨ï¼‰
+    double** b = new double*[n];      // æ–¹æ³•2çš„çŸ©é˜µï¼ˆåˆ—ä¼˜å…ˆå­˜å‚¨ï¼‰
+    double* vector = new double[n];   // è¾“å…¥å‘é‡
+    double* a = new double[n];        // è¾“å…¥å‘é‡å‰¯æœ¬
+    double* result1 = new double[n];  // æ–¹æ³•1ç»“æœ
+    double* result2 = new double[n];  // æ–¹æ³•2ç»“æœ
+    double* result3 = new double[n];  // æ–¹æ³•3ç»“æœ
+    double* result4 = new double[n];  // æ–¹æ³•4ç»“æœ
 
-    // ·Ö±ğÎª matrix ºÍ b ·ÖÅäÃ¿Ò»ĞĞµÄÄÚ´æ
+    // åˆ†åˆ«ä¸º matrix å’Œ b åˆ†é…æ¯ä¸€è¡Œçš„å†…å­˜
     for (int i = 0; i < n; ++i) {
         matrix[i] = new double[n];
     }
@@ -65,21 +98,21 @@ int main() {
         b[i] = new double[n];
     }
 
-    // ³õÊ¼»¯Êı¾İ
+    // åˆå§‹åŒ–æ•°æ®
     for (int i = 0; i < n; ++i) {
         vector[i] = static_cast<double>(rand()) / RAND_MAX;
         a[i] = vector[i];
         for (int j = 0; j < n; ++j) {
             matrix[i][j] = static_cast<double>(rand()) / RAND_MAX;
-            b[j][i] = matrix[i][j]; // ½« b ÉèÎª matrix µÄ×ªÖÃ£¨Ä£ÄâÁĞÓÅÏÈ£©
+            b[j][i] = matrix[i][j]; // å°† b è®¾ä¸º matrix çš„è½¬ç½®ï¼ˆæ¨¡æ‹Ÿåˆ—ä¼˜å…ˆï¼‰
         }
     }
 
-    // ¸ß¾«¶È¼ÆÊ±º¯Êı
-    long long head1, tail1, head2, tail2, freq, head3, tail3;
+    // é«˜ç²¾åº¦è®¡æ—¶å‡½æ•°
+    long long head1, tail1, head2, tail2, freq, head3, tail3, head4, tail4;
     QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
 
-    // ²âÊÔ·½·¨1
+    // æµ‹è¯•æ–¹æ³•1
     double time1 = 0.0;
     for (int t = 0; t < trials; ++t) {
         QueryPerformanceCounter((LARGE_INTEGER*)&head1);
@@ -87,7 +120,7 @@ int main() {
         QueryPerformanceCounter((LARGE_INTEGER*)&tail1);
         time1 += (tail1 - head1) *1000 / freq;
     }
-    // ²âÊÔ·½·¨2
+    // æµ‹è¯•æ–¹æ³•2
     double time2 = 0.0;
     for (int t = 0; t < trials; ++t) {
         QueryPerformanceCounter((LARGE_INTEGER*)&head2);
@@ -96,7 +129,7 @@ int main() {
         time2 += (tail2 - head2) *1000 / freq;
     }
 
-    // ²âÊÔ·½·¨3
+    // æµ‹è¯•æ–¹æ³•3
     double time3 = 0.0;
     for (int t = 0; t < trials; ++t) {
         QueryPerformanceCounter((LARGE_INTEGER*)&head3);
@@ -105,13 +138,23 @@ int main() {
         time3 += (tail3 - head3) *1000 / freq;
     }
 
-    // Êä³ö½á¹û
-    std::cout << std::fixed << std::setprecision(10);
-    std::cout << "Method1 (ÁĞÓÅÏÈ·ÃÎÊ) Æ½¾ùÊ±¼ä: " << time1 / trials << " ºÁÃë" << std::endl;
-    std::cout << "Method2 (ÏÔÊ½ÁĞÀÛ¼Ó) Æ½¾ùÊ±¼ä: " << time2 / trials << " ºÁÃë" << std::endl;
-    std::cout << "Method3 (Ñ­»·ÓÅ»¯) Æ½¾ùÊ±¼ä: " << time3 / trials << " ºÁÃë" << std::endl;
+    // æµ‹è¯•æ–¹æ³•4
+    double time4 = 0.0;
+    for (int t = 0; t < trials; ++t) {
+        QueryPerformanceCounter((LARGE_INTEGER*)&head4);
+        method4(b, a, result4, n);
+        QueryPerformanceCounter((LARGE_INTEGER*)&tail4);
+        time4 += (tail4 - head4) *1000 / freq;
+    }
 
-    // ÊÍ·ÅÄÚ´æ
+    // è¾“å‡ºç»“æœ
+    std::cout << std::fixed << std::setprecision(10);
+    std::cout << "Method1 (åˆ—ä¼˜å…ˆè®¿é—®) å¹³å‡æ—¶é—´: " << time1 / trials << " æ¯«ç§’" << std::endl;
+    std::cout << "Method2 (æ˜¾å¼åˆ—ç´¯åŠ ) å¹³å‡æ—¶é—´: " << time2 / trials << " æ¯«ç§’" << std::endl;
+    std::cout << "Method3 (å¾ªç¯ä¼˜åŒ–) å¹³å‡æ—¶é—´: " << time3 / trials << " æ¯«ç§’" << std::endl;
+    std::cout << "Method4 (SIMD) å¹³å‡æ—¶é—´: " << time4 / trials << " æ¯«ç§’" << std::endl;
+
+    // é‡Šæ”¾å†…å­˜
     for (int i = 0; i < n; ++i) {
         delete[] matrix[i];
         delete[] b[i];
@@ -123,6 +166,7 @@ int main() {
     delete[] result1;
     delete[] result2;
     delete[] result3;
+    delete[] result4;
 
     return 0;
 }
