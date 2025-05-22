@@ -1,96 +1,71 @@
 #include <iostream>
 #include <cstdlib>
-#include <Windows.h>
+#include <ctime>
 #include <iomanip>
-#include <stdio.h>
+#include <cmath>       // ���� fabs ��������ͷ�ļ�
+#include <sys/time.h>  // ���� gettimeofday ����ͷ�ļ�
 
-#ifdef __cplusplus
-#define RESTRICT __restrict
-#else
-#define RESTRICT restrict
-#endif
-
-// 方法1：列优先遍历（缓存不友好）
+// ����1�������ȱ��������治�Ѻã�
 void method1(double** matrix, double* vector, double* result, int n) {
     for (int j = 0; j < n; j++) {
         double sum = 0.0;
         for (int i = 0; i < n; i++) {
-            sum += matrix[i][j] * vector[i]; // 列优先访问
+            sum += matrix[i][j] * vector[i]; // �����ȷ���
         }
         result[j] = sum;
     }
 }
 
-// 方法2：显式列优先累加
+// ����2����ʽ�������ۼ�
 void method2(double** b, double* a, double* sum, int n) {
     for (int i = 0; i < n; ++i) sum[i] = 0.0;
     for (int j = 0; j < n; ++j) {
         for (int i = 0; i < n; ++i) {
-            sum[i] += b[j][i] * a[j]; // 列优先访问
+            sum[i] += b[j][i] * a[j]; // �����ȷ���
         }
     }
 }
 
-// 方法3：循环展开
+// ����3��ѭ��չ��
 void method3(double** b, double* a, double* sum, int n) {
     for (int i = 0; i < n; ++i) sum[i] = 0.0;
-        for (int j = 0; j < n; ++j) {
-        int i;
-        // 主循环，每次处理4个元素
-        for (i = 0; i <= n - 4; i += 4) {
-             sum[i]     += b[j][i]     * a[j];
-             sum[i + 1] += b[j][i + 1] * a[j];
-             sum[i + 2] += b[j][i + 2] * a[j];
-             sum[i + 3] += b[j][i + 3] * a[j];
-        }
-        // 处理剩余不足4个的元素
-        for (; i < n; ++i) {
-             sum[i] += b[j][i] * a[j];
-        }
-    }
-}
-
-void method4(double** b, double* a, double* sum, int n) {
     for (int j = 0; j < n; ++j) {
-        // 将 a[j] 读取到局部变量，减少内存访问次数
-        double a_val = a[j];
-        // 使用 restrict 提示编译器指针不会互相重叠，便于优化
-        double * RESTRICT b_j = b[j];
-        int i = 0;
-        // 主循环：每次处理4个元素，并通过 pragma 指令鼓励 SIMD 矢量化
-        #pragma omp simd
-        for (; i <= n - 4; i += 4) {
-            sum[i]     += b_j[i]     * a_val;
-            sum[i + 1] += b_j[i + 1] * a_val;
-            sum[i + 2] += b_j[i + 2] * a_val;
-            sum[i + 3] += b_j[i + 3] * a_val;
+        int i;
+        // ��ѭ����ÿ�δ���4��Ԫ��
+        for (i = 0; i <= n - 4; i += 4) {
+            sum[i] += b[j][i] * a[j];
+            sum[i + 1] += b[j][i + 1] * a[j];
+            sum[i + 2] += b[j][i + 2] * a[j];
+            sum[i + 3] += b[j][i + 3] * a[j];
         }
-        // 处理剩余不足4个的元素，同样加入 SIMD 提示
-        #pragma omp simd
+        // ����ʣ�಻��4����Ԫ��
         for (; i < n; ++i) {
-            sum[i] += b_j[i] * a_val;
+            sum[i] += b[j][i] * a[j];
         }
     }
 }
 
-
-
+// �߾��ȼ�ʱ���� (Linux/POSIX)
+double get_time() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000.0 + tv.tv_usec / 1000.0;
+}
 
 int main() {
-    const int n = 20000;      // 矩阵维度（测试大尺寸最坏情况）
-    const int trials = 5;   // 测试次数
+    const int n = 20000;    // ����ά�ȣ����Դ�ߴ�������
+    const int trials = 1;   // ���Դ���
 
-    // 动态分配内存（模拟列优先存储）
-    double** matrix = new double*[n]; // 方法1的矩阵（行优先存储）
-    double** b = new double*[n];      // 方法2的矩阵（列优先存储）
-    double* vector = new double[n];   // 输入向量
-    double* a = new double[n];        // 输入向量副本
-    double* result1 = new double[n];  // 方法1结果
-    double* result2 = new double[n];  // 方法2结果
-    double* result3 = new double[n];  // 方法3结果
-    double* result4 = new double[n];  // 方法4结果
+    // ��̬�����ڴ棨ģ�������ȴ洢��
+    double** matrix = new double* [n]; // ����1�ľ��������ȴ洢��
+    double** b = new double* [n];      // ����2�ľ��������ȴ洢��
+    double* vector = new double[n];   // ��������
+    double* a = new double[n];        // ������������
+    double* result1 = new double[n];  // ����1���
+    double* result2 = new double[n];  // ����2���
+    double* result3 = new double[n];  // ����3���
 
-    // 分别为 matrix 和 b 分配每一行的内存
+    // �ֱ�Ϊ matrix �� b ����ÿһ�е��ڴ�
     for (int i = 0; i < n; ++i) {
         matrix[i] = new double[n];
     }
@@ -98,63 +73,45 @@ int main() {
         b[i] = new double[n];
     }
 
-    // 初始化数据
+    // ��ʼ������
+    srand(time(NULL)); // ��ʼ���������
     for (int i = 0; i < n; ++i) {
         vector[i] = static_cast<double>(rand()) / RAND_MAX;
         a[i] = vector[i];
         for (int j = 0; j < n; ++j) {
             matrix[i][j] = static_cast<double>(rand()) / RAND_MAX;
-            b[j][i] = matrix[i][j]; // 将 b 设为 matrix 的转置（模拟列优先）
+            b[j][i] = matrix[i][j]; // �� b ��Ϊ matrix ��ת�ã�ģ�������ȣ�
         }
     }
 
-    // 高精度计时函数
-    long long head1, tail1, head2, tail2, freq, head3, tail3, head4, tail4;
-    QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
-
-    // 测试方法1
-    double time1 = 0.0;
+    // ���Է���1
+    double start1 = get_time();
     for (int t = 0; t < trials; ++t) {
-        QueryPerformanceCounter((LARGE_INTEGER*)&head1);
         method1(matrix, vector, result1, n);
-        QueryPerformanceCounter((LARGE_INTEGER*)&tail1);
-        time1 += (tail1 - head1) *1000 / freq;
     }
-    // 测试方法2
-    double time2 = 0.0;
+    double time1 = get_time() - start1;
+
+    // ���Է���2
+    double start2 = get_time();
     for (int t = 0; t < trials; ++t) {
-        QueryPerformanceCounter((LARGE_INTEGER*)&head2);
         method2(b, a, result2, n);
-        QueryPerformanceCounter((LARGE_INTEGER*)&tail2);
-        time2 += (tail2 - head2) *1000 / freq;
     }
+    double time2 = get_time() - start2;
 
-    // 测试方法3
-    double time3 = 0.0;
+    // ���Է���3
+    double start3 = get_time();
     for (int t = 0; t < trials; ++t) {
-        QueryPerformanceCounter((LARGE_INTEGER*)&head3);
         method3(b, a, result3, n);
-        QueryPerformanceCounter((LARGE_INTEGER*)&tail3);
-        time3 += (tail3 - head3) *1000 / freq;
     }
+    double time3 = get_time() - start3;
 
-    // 测试方法4
-    double time4 = 0.0;
-    for (int t = 0; t < trials; ++t) {
-        QueryPerformanceCounter((LARGE_INTEGER*)&head4);
-        method4(b, a, result4, n);
-        QueryPerformanceCounter((LARGE_INTEGER*)&tail4);
-        time4 += (tail4 - head4) *1000 / freq;
-    }
-
-    // 输出结果
+    // ������
     std::cout << std::fixed << std::setprecision(10);
-    std::cout << "Method1 (列优先访问) 平均时间: " << time1 / trials << " 毫秒" << std::endl;
-    std::cout << "Method2 (显式列累加) 平均时间: " << time2 / trials << " 毫秒" << std::endl;
-    std::cout << "Method3 (循环优化) 平均时间: " << time3 / trials << " 毫秒" << std::endl;
-    std::cout << "Method4 (SIMD) 平均时间: " << time4 / trials << " 毫秒" << std::endl;
+    std::cout << "Method1 (�����ȷ���) ƽ��ʱ��: " << time1 / trials << " ����" << std::endl;
+    std::cout << "Method2 (��ʽ���ۼ�) ƽ��ʱ��: " << time2 / trials << " ����" << std::endl;
+    std::cout << "Method3 (ѭ���Ż�) ƽ��ʱ��: " << time3 / trials << " ����" << std::endl;
 
-    // 释放内存
+    // �ͷ��ڴ�
     for (int i = 0; i < n; ++i) {
         delete[] matrix[i];
         delete[] b[i];
@@ -166,7 +123,6 @@ int main() {
     delete[] result1;
     delete[] result2;
     delete[] result3;
-    delete[] result4;
 
     return 0;
 }
